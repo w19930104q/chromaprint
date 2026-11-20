@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <stdint.h>
 #include <algorithm>
+#include <cstring>
 #include <vector>
 #include <fstream>
 #include "chromaprint.h"
@@ -195,7 +196,9 @@ TEST(API, TestDecodeFingerprintOutOfRange)
 
 	const char *encoded = "AQABz9GSJEkkKYmS4Tp6xvjx-tBpXMfRpUP1w3yGHmUPcWTwhnhgiYNeeBcu5HhbxA2PZuEFnSd-9FECq-gJPbtQ_fiLfkf3wvnRl9AO__jxCj7-QjzyoFek4xcmPnA2-qjUDz9yTsR56PFRJp4GP8ePLj2qY-NRfkL2oXEx6cFThPCh7_iRVnzQbX9wHc0UT0I_5Duao1KVGOsPlpdQLcqFHxf5oqfRFVpySvjR_Ch7_NCO87h05ChL7Do65vDIFC2H8zhyKnhqXJ6GdsuLw4c276h-TGEcfAfjmWgeYzy6HT6u5UhvhCceZSp0PD5iZzka9Zh05NOEZmsgxZTx50ifa8hxpRv0E1vHKciFHk0cFY0moRKzabgbDb3gH_2RH8k3lGuEKc_x3_hRPehX5ODRfDX6JCtOIVyOMFyP-4XyHWkaF9fRt0VzD7sOJlUkHX2Q9Ed-9PnR8EpwijfCJJFi9PmhLySPhmOC-sIZiI8m_ML3INJ3pI6UknCNnkHzyNDEpchz400d9IN99PiSo9kyDf0xXTrS_HCC79D64Tx4o1YSIReeCKH84Q0ORT7CNMKPmQma62inD7xoodlEJNOJXEHzo3qCMEn4omWg_UPKqBN69EYz5kPyDrkeCb2OKd2i4RJ6PB3CQ5Wo5shTMUH7Hf6IHsd5NNcQnjFGo8oP__DJQz8OJk9s5BROotERSmSOjyaUv0LqsziV4zmaK5jIFLXAxEk0xIfeIcyFqiEVXL_hGLnQUOXRJ8SHSLnRr_jx5IU35CH0N0gfHtdQ_Wj0ZniT7ENZXPDRrijZIMxn7Dkqo0nIoG_QVDsO_mi6yOibDJqyHf6DSiX2fdAyVEyCXDyqhD2aRyf2H09EMJkchE-g60GYK3grNHHwHE9I9DrSMoJ2ZMd7_Ch7WEftI24DqTrCEteio9ePLxIVIj-uW1CjK6goVoYnhYZuuElwNDfyIT4e4lGWKWhEyUF5XKic47xQ0ZygO0XXhAgTMzP-FN_x4_lQiynCxBlxPgivIEyNL0e64zu-hCR-fMzBieLxIzy0MEZ-MNcc-Bqc53gYUfCPh0c6MmFI6DWaijk-K8g_PNXRhKjTD72UBSXzgT_-YIx27EsUJ6iThkJTZUd-aM_R03iaCk-CUwITPUcPVVfwLA8m0UbTrLgSHR3-Y8-DUsKVB6EkJWh-_HgPTv3AZs_R23CcBfWRM1B1hB1K63iipLg9XETcZ0I3jynO8PiF64YtH1klhDvxhThXzFex3kG1HPZu9Dmu47mh5UGtHKp1POjyUMWfDJo6of8Gtgvy5EDfo1bgnWiX6wCGhEEAKADJIUAbILJzTAgDBDBCAgQQMEQQJABBwgJgBBMAAGaEAMwAh5wAikDkhQBGCIGkAgQASghihAmlEBDEMCOUAYYJ4pRVwhAEAiXEYWAUMchQBpQVhkwhgDUMAQAoMkgxJRUwjgFBBRBCEGM0BgBAAIhQRBJkkALCCAUMQIAIIQBQRDGDBAECAAGY4MYQIhSgBCEkKAHEggG8cAIYJIgUwJAHpCHAMAaEQEYo6IgAADgEAUIIBAQcMEIgYBkECEABCEYKAYYcA4oowBBABAAvBJJKMGIAEAYwA5QADAAGCINMaAKQJcQYjCCzxBBACAcGMM4II8IQKIghgFgABTOEUAegMQQ4wYCBSjgAiAFCEGCAYwZIIAA0QChAhBROUAQAEo4YR4AQhhhliAAMEAQUBtooAg5xjCADgCGAOCQIQgQghigwQAikBBAEAA";
 
-	chromaprint_decode_fingerprint(encoded, strlen(encoded), &fp, &length, &algorithm, 1);
+	if (chromaprint_decode_fingerprint(encoded, strlen(encoded), &fp, &length, &algorithm, 1)) {
+		chromaprint_dealloc(fp);
+	}
 }
 
 TEST(API, TestDecodeFingerprintEmpty)
@@ -207,6 +210,7 @@ TEST(API, TestDecodeFingerprintEmpty)
 
 	auto ret = chromaprint_decode_fingerprint(encoded, strlen(encoded), &fp, &length, &algorithm, 1);
 	ASSERT_EQ(1, ret);
+	SCOPE_EXIT(chromaprint_dealloc(fp));
 	ASSERT_EQ(0, length);
 	ASSERT_EQ(1, algorithm);
 }
@@ -264,6 +268,85 @@ TEST(API, TestDecodeFingerprintInvalidSize)
 	ASSERT_EQ(0, length);
 	ASSERT_EQ(0, chromaprint_decode_fingerprint_header(NULL, 6, &length, &algorithm, 0));
 	ASSERT_EQ(0, length);
+}
+
+TEST(API, TestEncodeDecodeFingerprintEmpty)
+{
+	char *encoded;
+	int encoded_size;
+	ASSERT_EQ(1, chromaprint_encode_fingerprint(NULL, 0, 1, &encoded, &encoded_size, 0));
+	SCOPE_EXIT(chromaprint_dealloc(encoded));
+	ASSERT_EQ(4, encoded_size);
+
+	uint32_t *fp;
+	int size, algorithm;
+	ASSERT_EQ(1, chromaprint_decode_fingerprint(encoded, encoded_size, &fp, &size, &algorithm, 0));
+	SCOPE_EXIT(chromaprint_dealloc(fp));
+	ASSERT_EQ(0, size);
+	ASSERT_EQ(1, algorithm);
+}
+
+TEST(API, TestEncodeDecodeFingerprintRoundTrip)
+{
+	// Dense pseudo-random data exercises both normal and exceptional bits.
+	const int n = 100000;
+	std::vector<uint32_t> fingerprint(n);
+	uint32_t state = 12345;
+	for (int i = 0; i < n; i++) {
+		state = state * 1664525u + 1013904223u;
+		fingerprint[i] = state;
+	}
+
+	char *encoded;
+	int encoded_size;
+	ASSERT_EQ(1, chromaprint_encode_fingerprint(fingerprint.data(), n, 1, &encoded, &encoded_size, 0));
+	SCOPE_EXIT(chromaprint_dealloc(encoded));
+
+	uint32_t *decoded;
+	int decoded_size, algorithm;
+	ASSERT_EQ(1, chromaprint_decode_fingerprint(encoded, encoded_size, &decoded, &decoded_size, &algorithm, 0));
+	SCOPE_EXIT(chromaprint_dealloc(decoded));
+
+	ASSERT_EQ(n, decoded_size);
+	ASSERT_EQ(1, algorithm);
+	ASSERT_EQ(0, memcmp(fingerprint.data(), decoded, n * sizeof(uint32_t)));
+
+	// Re-encoding the decoded fingerprint must be bit-exact.
+	char *encoded2;
+	int encoded2_size;
+	ASSERT_EQ(1, chromaprint_encode_fingerprint(decoded, decoded_size, 1, &encoded2, &encoded2_size, 0));
+	SCOPE_EXIT(chromaprint_dealloc(encoded2));
+	ASSERT_EQ(encoded_size, encoded2_size);
+	ASSERT_EQ(0, memcmp(encoded, encoded2, encoded_size));
+}
+
+TEST(API, TestEncodeDecodeFingerprintMaxSize)
+{
+	// The header stores the size in 24 bits, so this is the largest legal fingerprint.
+	const int n = 0xFFFFFF;
+	std::vector<uint32_t> fingerprint(n);
+	for (int i = 0; i < n; i++) {
+		fingerprint[i] = 1u << (i % 32);
+	}
+
+	char *encoded;
+	int encoded_size;
+	ASSERT_EQ(1, chromaprint_encode_fingerprint(fingerprint.data(), n, 1, &encoded, &encoded_size, 0));
+	SCOPE_EXIT(chromaprint_dealloc(encoded));
+
+	// The size must be stored exactly in the 24-bit header field.
+	ASSERT_EQ(char(0xFF), encoded[1]);
+	ASSERT_EQ(char(0xFF), encoded[2]);
+	ASSERT_EQ(char(0xFF), encoded[3]);
+
+	uint32_t *decoded;
+	int decoded_size, algorithm;
+	ASSERT_EQ(1, chromaprint_decode_fingerprint(encoded, encoded_size, &decoded, &decoded_size, &algorithm, 0));
+	SCOPE_EXIT(chromaprint_dealloc(decoded));
+
+	ASSERT_EQ(n, decoded_size);
+	ASSERT_EQ(1, algorithm);
+	ASSERT_EQ(0, memcmp(fingerprint.data(), decoded, size_t(n) * sizeof(uint32_t)));
 }
 
 TEST(API, TestDecodeFingerprintBitPastPosition32)
