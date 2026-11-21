@@ -224,6 +224,55 @@ TEST(API, TestDecodeFingerprintNull)
 	ASSERT_EQ(0, algorithm);
 }
 
+TEST(API, TestDecodeFingerprintMalformedBase64)
+{
+	uint32_t *fp;
+	int length, algorithm;
+
+	// A dangling symbol (length % 4 == 1) previously made the base64 decoder
+	// silently drop the last symbol, so "AQAAx" decoded as the valid "AQAA"
+	// instead of being rejected. It must now fail at the base64 layer.
+	const char *malformed[] = {
+		"AQAAx",   // 5 symbols, length % 4 == 1
+		"w",       // single symbol
+		"AQABx",   // 5 symbols, length % 4 == 1
+		"eA==",    // padding is not part of the URL-safe alphabet
+		"eH+4",    // standard-alphabet character '+'
+	};
+
+	for (const char *encoded : malformed) {
+		auto ret = chromaprint_decode_fingerprint(encoded, strlen(encoded), &fp, &length, &algorithm, 1);
+		ASSERT_EQ(0, ret) << "input=" << encoded;
+		ASSERT_EQ(0, length) << "input=" << encoded;
+		ASSERT_EQ(0, algorithm) << "input=" << encoded;
+
+		ret = chromaprint_decode_fingerprint_header(encoded, strlen(encoded), &length, &algorithm, 1);
+		ASSERT_EQ(0, ret) << "input=" << encoded;
+		ASSERT_EQ(0, length) << "input=" << encoded;
+	}
+}
+
+TEST(API, TestDecodeFingerprintBase64RoundTrip)
+{
+	uint32_t fingerprint[] = { 558758263u, 4152350079u, 3615356287u, 0u, 4294967295u };
+	char *encoded;
+	int encoded_size;
+
+	ASSERT_EQ(1, chromaprint_encode_fingerprint(fingerprint, NELEMS(fingerprint), 1, &encoded, &encoded_size, 1));
+	SCOPE_EXIT(chromaprint_dealloc(encoded));
+
+	uint32_t *decoded;
+	int length, algorithm;
+	ASSERT_EQ(1, chromaprint_decode_fingerprint(encoded, encoded_size, &decoded, &length, &algorithm, 1));
+	SCOPE_EXIT(chromaprint_dealloc(decoded));
+
+	ASSERT_EQ((int) NELEMS(fingerprint), length);
+	ASSERT_EQ(1, algorithm);
+	for (size_t i = 0; i < NELEMS(fingerprint); i++) {
+		ASSERT_EQ(fingerprint[i], decoded[i]) << "index=" << i;
+	}
+}
+
 TEST(API, TestDecodeFingerprintCoustidFingerprint)
 {
 	uint32_t *fp;

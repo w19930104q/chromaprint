@@ -164,14 +164,15 @@ void PrintResult(ChromaprintContext *ctx, FFmpegAudioReader &reader, bool first,
 		exit(2);
 	}
 	if (size <= 0) {
-		if (first) {
-			fprintf(stderr, "ERROR: Empty fingerprint\n");
-			exit(2);
+		if (!first) {
+			// An empty fingerprint in a later chunk is simply skipped.
+			return;
 		}
-		return;
-	}
-
-	if (g_raw) {
+		// First and only chunk with no fingerprintable audio: report an empty
+		// fingerprint instead of treating it as a fatal error.
+		tmp_fp = "";
+		fp = tmp_fp.c_str();
+	} else if (g_raw) {
 		std::stringstream ss;
 		uint32_t *raw_fp_data = nullptr;
 		int raw_fp_size = 0;
@@ -203,12 +204,14 @@ void PrintResult(ChromaprintContext *ctx, FFmpegAudioReader &reader, bool first,
 	}
 	SCOPE_EXIT(if (dealloc_fp) { chromaprint_dealloc((void *) fp); });
 
-	if (g_max_chunk_duration == 0) {
-		duration = reader.GetDuration();
-		if (duration < 0.0) {
-			duration = 0.0;
-		} else {
-			duration /= 1000.0;
+	if (g_max_chunk_duration == 0 && size > 0) {
+		// Without chunking, fall back to the container duration only when the
+		// input was not restricted by -length. Otherwise the argument already
+		// reflects the duration of the audio actually processed, which can be
+		// shorter than the container metadata for a truncated stream.
+		if (g_max_duration <= 0) {
+			const auto file_duration = reader.GetDuration();
+			duration = file_duration < 0.0 ? 0.0 : file_duration / 1000.0;
 		}
 	}
 
@@ -273,6 +276,10 @@ void ProcessFile(ChromaprintContext *ctx, FFmpegAudioReader &reader, const char 
 
 	size_t stream_size = 0;
 	const size_t stream_limit = g_max_duration * reader.GetSampleRate();
+	// Number of samples (per channel) still allowed before the -length limit
+	// is reached. Decremented as frames are consumed so the limit is enforced
+	// regardless of how the reader chunks its frames.
+	size_t stream_remaining = stream_limit;
 
 	size_t chunk_size = 0;
 	const size_t chunk_limit = g_max_chunk_duration * reader.GetSampleRate();
@@ -299,11 +306,11 @@ void ProcessFile(ChromaprintContext *ctx, FFmpegAudioReader &reader, const char 
 
 		bool stream_done = false;
 		if (stream_limit > 0) {
-			const auto remaining = stream_limit - stream_size;
-			if (frame_size > remaining) {
-				frame_size = remaining;
+			if (frame_size > stream_remaining) {
+				frame_size = stream_remaining;
 				stream_done = true;
 			}
+			stream_remaining -= frame_size;
 		}
 		stream_size += frame_size;
 
@@ -392,12 +399,29 @@ void ProcessFile(ChromaprintContext *ctx, FFmpegAudioReader &reader, const char 
 	}
 
 	if (chunk_size > 0) {
-		const auto chunk_duration = (chunk_size - extra_chunk_limit) * 1.0 / reader.GetSampleRate() + overlap;
-		PrintResult(ctx, reader, first_chunk, ts, chunk_duration);
+		double result_duration;
+		if (g_max_chunk_duration == 0) {
+			// Single (non-chunked) result: derive the duration from the number
+			// of samples actually processed, which honours -length. PrintResult
+			// replaces this with container metadata when no limit is active.
+			result_duration = reader.GetSampleRate() > 0
+				? stream_size * 1.0 / reader.GetSampleRate()
+				: 0.0;
+		} else {
+			result_duration = (chunk_size - extra_chunk_limit) * 1.0 / reader.GetSampleRate() + overlap;
+		}
+		PrintResult(ctx, reader, first_chunk, ts, result_duration);
 		got_results = true;
 	} else if (first_chunk) {
-		fprintf(stderr, "ERROR: Not enough audio data\n");
-		exit(2);
+		// The stream was opened but yielded no fingerprintable audio (an empty
+		// file or only a few hundred samples). This is not a failure: emit an
+		// empty result instead of aborting, so callers can handle it like any
+		// other fingerprint.
+		const double empty_duration = reader.GetSampleRate() > 0
+			? stream_size * 1.0 / reader.GetSampleRate()
+			: 0.0;
+		PrintResult(ctx, reader, first_chunk, ts, empty_duration);
+		got_results = true;
 	}
 
 	if (!g_ignore_errors) {

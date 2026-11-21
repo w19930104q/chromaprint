@@ -57,6 +57,46 @@ inline size_t GetBase64DecodedSize(size_t size)
 	return size * 3 / 4;
 }
 
+// Lookup helper for validity. kBase64CharsReversed cannot be used for this
+// directly, because the symbol 'A' legitimately maps to the value 0.
+inline bool IsBase64Char(char c)
+{
+	// The URL-safe alphabet: A-Z, a-z, 0-9, '-' and '_'.
+	return (c >= 'A' && c <= 'Z') ||
+		(c >= 'a' && c <= 'z') ||
+		(c >= '0' && c <= '9') ||
+		c == '-' || c == '_';
+}
+
+inline bool IsValidBase64EncodedSize(size_t size)
+{
+	// A valid (unpadded) base64 string has a length whose remainder modulo 4
+	// is 0, 2 or 3. A single dangling 6-bit symbol (remainder 1) does not
+	// carry enough bits for a whole output byte and must be rejected instead
+	// of being silently dropped.
+	return size % 4 != 1;
+}
+
+template <typename InputIt>
+inline bool IsValidBase64(InputIt first, InputIt last)
+{
+	const auto size = std::distance(first, last);
+	if (!IsValidBase64EncodedSize(static_cast<size_t>(size))) {
+		return false;
+	}
+	for (auto it = first; it != last; ++it) {
+		if (!IsBase64Char(*it)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+inline bool IsValidBase64(const std::string &src)
+{
+	return IsValidBase64(src.cbegin(), src.cend());
+}
+
 template <typename InputIt, typename OutputIt>
 inline OutputIt Base64Encode(InputIt first, InputIt last, OutputIt dest, bool terminate = false)
 {

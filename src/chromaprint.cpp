@@ -198,9 +198,15 @@ int chromaprint_decode_fingerprint(const char *encoded_fp, int encoded_size, uin
 	if (encoded_size >= 0 && (encoded_fp != NULL || encoded_size == 0)) {
 		std::string encoded(encoded_fp, encoded_size);
 		if (base64) {
-			encoded = Base64Decode(encoded);
+			if (!IsValidBase64(encoded.begin(), encoded.end())) {
+				ok = false;
+			} else {
+				encoded = Base64Decode(encoded);
+				ok = DecompressFingerprint(encoded, uncompressed, algo);
+			}
+		} else {
+			ok = DecompressFingerprint(encoded, uncompressed, algo);
 		}
-		ok = DecompressFingerprint(encoded, uncompressed, algo);
 	}
 	if (!ok) {
 		*fp = nullptr;
@@ -227,9 +233,15 @@ int chromaprint_decode_fingerprint_header(const char *encoded_fp, int encoded_si
 	if (encoded_size >= 0 && (encoded_fp != NULL || encoded_size == 0)) {
 		std::string encoded(encoded_fp, std::min(6, encoded_size));
 		if (base64) {
-			encoded = Base64Decode(encoded);
+			if (!IsValidBase64(encoded.begin(), encoded.end())) {
+				ok = false;
+			} else {
+				encoded = Base64Decode(encoded);
+				ok = DecompressFingerprintHeader(encoded, size_out, algorithm_out);
+			}
+		} else {
+			ok = DecompressFingerprintHeader(encoded, size_out, algorithm_out);
 		}
-		ok = DecompressFingerprintHeader(encoded, size_out, algorithm_out);
 	}
 	if (!ok) {
 		if (size) {

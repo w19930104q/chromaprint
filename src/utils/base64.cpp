@@ -22,6 +22,12 @@ std::string Base64Encode(const std::string &src)
 
 void Base64Decode(const std::string &src, std::string &dest)
 {
+	if (!IsValidBase64(src.cbegin(), src.cend())) {
+		// Invalid input (a dangling symbol or an unexpected character):
+		// refuse to decode rather than silently producing truncated data.
+		dest.clear();
+		return;
+	}
 	dest.resize(GetBase64DecodedSize(src.size()));
 	const auto end = Base64Decode(src.cbegin(), src.cend(), dest.begin());
 	assert(dest.end() == end);

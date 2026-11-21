@@ -1,3 +1,14 @@
+Unreleased
+==========
+
+ - Fixed fpcalc `-length` so the reported duration matches the amount of
+   audio actually processed instead of always showing the full file duration
+ - fpcalc no longer fails on very short or empty audio streams; it prints an
+   empty fingerprint instead of exiting with an error
+ - Base64 decoding now rejects malformed input (a dangling symbol or an
+   unexpected character) instead of silently dropping data, so fingerprints
+   can no longer decode to the wrong value
+
 Version 1.6.2 -- October 15, 2026
 =================================
 

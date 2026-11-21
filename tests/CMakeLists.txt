@@ -39,7 +39,10 @@ target_include_directories(all_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(all_tests PRIVATE chromaprint gtest gtest_main)
 
 if(BUILD_TOOLS)
-  target_sources(all_tests PRIVATE ../src/audio/ffmpeg_audio_reader_test.cpp)
+  target_sources(all_tests PRIVATE
+    ../src/audio/ffmpeg_audio_reader_test.cpp
+    fpcalc_cli_test.cpp
+  )
   target_include_directories(all_tests
     PRIVATE
       ${FFMPEG_LIBAVFORMAT_INCLUDE_DIRS}
@@ -48,6 +51,7 @@ if(BUILD_TOOLS)
       ${AUDIO_PROCESSOR_INCLUDE_DIRS}
     )
   target_link_libraries(all_tests PRIVATE fpcalc_libs)
+  target_compile_definitions(all_tests PRIVATE FPCALC_PATH="$<TARGET_FILE:fpcalc>")
 endif()
 
 if(WIN32 AND BUILD_SHARED_LIBS AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.21.0")
