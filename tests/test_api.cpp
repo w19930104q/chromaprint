@@ -278,4 +278,106 @@ TEST(API, TestDecodeFingerprintBitPastPosition32)
 	ASSERT_EQ(0, length);
 }
 
+namespace {
+
+// Run the whole fingerprinting pipeline on `data`, feeding it in the given
+// chunk sizes (in int16 samples, not frames). Returns the raw fingerprint.
+std::vector<uint32_t> FingerprintFromChunks(const std::vector<short> &data,
+                                            int algorithm, int num_channels,
+                                            const std::vector<size_t> &chunks)
+{
+	ChromaprintContext *ctx = chromaprint_new(algorithm);
+	EXPECT_NE(nullptr, ctx);
+	if (!ctx) {
+		return std::vector<uint32_t>();
+	}
+	SCOPE_EXIT(chromaprint_free(ctx));
+
+	EXPECT_EQ(1, chromaprint_start(ctx, 44100, num_channels));
+	size_t offset = 0;
+	for (size_t i = 0; offset < data.size(); i++) {
+		size_t n = std::min(chunks[i], data.size() - offset);
+		EXPECT_EQ(1, chromaprint_feed(ctx, data.data() + offset, static_cast<int>(n)));
+		offset += n;
+	}
+	EXPECT_EQ(1, chromaprint_finish(ctx));
+
+	uint32_t *raw = nullptr;
+	int size = 0;
+	EXPECT_EQ(1, chromaprint_get_raw_fingerprint(ctx, &raw, &size));
+	SCOPE_EXIT(chromaprint_dealloc(raw));
+	return std::vector<uint32_t>(raw, raw + size);
+}
+
+// The four required feeding patterns: a single whole feed, seven chunks,
+// a one-sample sliding feed, and fixed prime-sized chunks. Prime sizes are
+// deliberately coprime with the channel count so every call after the first
+// leaves a partial frame that has to be cached and re-used next time.
+std::vector<std::vector<size_t> > ChunkingSchemes(size_t length)
+{
+	const size_t primes[] = { 2, 3, 5, 7, 101, 997, 7919 };
+	std::vector<std::vector<size_t> > schemes;
+	schemes.push_back(std::vector<size_t>(1, length));
+	schemes.emplace_back(7, length / 7);
+	schemes.back()[6] += length % 7;
+	schemes.emplace_back(length, static_cast<size_t>(1));
+	for (size_t prime : primes) {
+		schemes.emplace_back((length + prime - 1) / prime, prime);
+	}
+	return schemes;
+}
+
+} // namespace
+
+TEST(API, ChunkedFeedDoesNotChangeFingerprint)
+{
+	std::vector<short> stereo = LoadAudioFile("data/test_stereo_44100.raw");
+
+	// The 2 s fixture is too short to yield a fingerprint for every algorithm
+	// (the classifier needs at least 16 FFT frames); repeat it so each stream
+	// is long enough, including the true stereo downmix path where odd chunk
+	// sizes split frames in the middle and exercise the leftover cache.
+	std::vector<short> stream;
+	stream.reserve(stereo.size() * 4);
+	for (int repeat = 0; repeat < 4; repeat++) {
+		stream.insert(stream.end(), stereo.begin(), stereo.end());
+	}
+
+	struct Case {
+		const char *name;
+		int num_channels;
+	};
+	const Case cases[] = {
+		{ "mono interpretation", 1 },
+		{ "stereo downmix", 2 },
+	};
+
+	for (const Case &c : cases) {
+		for (int algorithm = CHROMAPRINT_ALGORITHM_TEST1;
+		     algorithm <= CHROMAPRINT_ALGORITHM_TEST5; algorithm++) {
+			const std::string trace = std::string(c.name) + " algorithm " +
+			                          std::to_string(algorithm);
+			SCOPED_TRACE(trace);
+
+			const auto schemes = ChunkingSchemes(stream.size());
+			const std::vector<uint32_t> reference =
+				FingerprintFromChunks(stream, algorithm, c.num_channels, schemes[0]);
+			ASSERT_FALSE(reference.empty());
+
+			// Whole feed, seven chunks, 1-sample step and every prime scheme
+			// must produce a byte-identical, item-by-item fingerprint.
+			for (size_t i = 1; i < schemes.size(); i++) {
+				SCOPED_TRACE(std::string("scheme ") + std::to_string(i));
+				const std::vector<uint32_t> actual =
+					FingerprintFromChunks(stream, algorithm, c.num_channels, schemes[i]);
+				ASSERT_EQ(reference.size(), actual.size());
+				for (size_t j = 0; j < reference.size(); j++) {
+					EXPECT_EQ(reference[j], actual[j])
+						<< "Fingerprints differ at item " << j;
+				}
+			}
+		}
+	}
+}
+
 }; // namespace chromaprint
